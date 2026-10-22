@@ -19,6 +19,16 @@
 - 動作「拍攝照片」或「選取照片」
 - 動作「Base64編碼」,輸入接上一步照片
 
+### 實測踩雷記錄(2026-10-22)
+
+直接在「取得URL內容」動作的要求本文裡用JSON欄位建構器疊巢狀辭典/列表,**實測會讓捷徑App當機/卡死**(疊兩三層辭典後插變數必當)。改用下面這個方法穩定可行:
+
+1. 用獨立的「**文字**」動作,把整段JSON**當純文字手打**出來(不用巢狀欄位UI)
+2. 打到Base64資料要插入的地方,用「選取變數」插入Base64編碼動作的輸出
+3. 「取得URL內容」動作的**要求本文選「檔案」**,欄位插入這個「文字」動作的完整輸出(不要選JSON選項)
+
+另外踩到的雷:**魔術變數常抓不到剛做的Base64編碼結果**(選取變數清單只顯示不相關的URL建議、或清單卡在某個舊變數)。這是捷徑App索引卡住的問題,解法:**把「以Base64編碼」那個動作整個刪掉、重新搜尋新增一次**,通常這樣就能讓新建的動作被系統重新正常索引,之後選取變數就抓得到了。純重開App不一定有用,要刪掉重建那個動作本身。
+
 ### 步驟3-4:呼叫Claude API辨識食物
 
 **辨識用Prompt(放進Request Body的text內容):**
@@ -47,32 +57,12 @@
   - `x-api-key`: 你的API key
   - `anthropic-version`: `2023-06-01`
   - `content-type`: `application/json`
-- Request Body(JSON):
+- Request Body:**選「檔案」**,內容插入下面這個獨立「文字」動作的輸出(不要用JSON欄位建構器,見上方踩雷記錄)
+
+**獨立「文字」動作內容**(在這個「取得URL內容」動作**之前**新增,純文字手打,插入變數的地方用「選取變數」):
 
 ```json
-{
-  "model": "claude-haiku-5-5",
-  "max_tokens": 300,
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "image",
-          "source": {
-            "type": "base64",
-            "media_type": "image/jpeg",
-            "data": "<步驟2的Base64結果變數>"
-          }
-        },
-        {
-          "type": "text",
-          "text": "<上面那段prompt>"
-        }
-      ]
-    }
-  ]
-}
+{"model":"claude-haiku-5-5","max_tokens":300,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"<這裡插入Base64編碼動作的輸出變數>"}},{"type":"text","text":"<上面那段prompt,整段貼入,prompt本身不含雙引號可直接貼>"}]}]}
 ```
 
 ### 步驟5:解析回傳JSON
