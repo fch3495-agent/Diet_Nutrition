@@ -65,36 +65,48 @@
 {"model":"claude-haiku-5-5","max_tokens":300,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"<這裡插入Base64編碼動作的輸出變數>"}},{"type":"text","text":"<上面那段prompt,整段貼入,prompt本身不含雙引號可直接貼>"}]}]}
 ```
 
-### 步驟5:解析回傳JSON
+### 步驟5:解析回傳JSON(實際動作鏈,逐步接)
 
-- 動作「取得字典值」,從API回傳結果取 `content[0].text`,再「從輸入取得字典」解析成JSON
-- 從中取出 `food_name`、`estimated_weight_g`、`calories_kcal`、`protein_g`、`carbs_g`、`fat_g` 存成變數(當AI估算備援值)
+API回傳結構是 `{"content":[{"type":"text","text":"<AI回的JSON字串>"}]}`,要拆兩層才能用:
+
+1. 「從輸入取得字典」,輸入=取得URL內容(API呼叫)的結果
+2. 「取得字典值」,鍵打`content` → 得到清單
+3. 「取得清單中的項目」(搜尋關鍵字打`清單`或`項目`,圖示是☰,跟「取得字典值」的📖圖示不同,不要搞混),索引選第1項
+4. 「取得字典值」,字典選上一步,鍵打`text` → 這是字串形式的JSON
+5. 「從輸入取得字典」,輸入選上一步 → 真正轉成字典
+6. 六次「取得字典值」(鍵分別打`food_name`/`estimated_weight_g`/`calories_kcal`/`protein_g`/`carbs_g`/`fat_g`)+「設定變數」存成`FoodName`/`WeightG`/`AI_Cal`/`AI_Protein`/`AI_Carb`/`AI_Fat`
 
 ### 步驟6:查衛福部資料庫比對
 
-- 動作「取得URL內容」GET抓資料庫Raw網址(見前置準備),回傳是一個陣列,每筆含 `name`/`alias`/`calories_kcal`/`protein_g`/`fat_g`/`carbs_g`
-- 用「篩選[捷徑的清單]」或「重複處理清單中的每一項目」,比對 `name` 或 `alias` 是否包含 `food_name`(字串包含,關鍵字比對)
-- 比對到→取出該筆 `calories_kcal` 等四項(這是「每100克」數值)
+1. 「取得URL內容」(GET)抓資料庫Raw網址(見前置準備)
+2. 「從輸入取得字典」轉成清單
+3. 「**篩選檔案**」(搜尋關鍵字打`篩選檔案`,雖然叫檔案但可篩任何清單):條件`名稱`包含`FoodName`
+4. 「**計算**」動作算篩選結果的項目數(不要用「如果」動作自帶的屬性選單選數量——這個清單被當成「檔案」類型,屬性清單沒有數量選項,只會跳出檔案大小/副檔名等無關屬性,要另外加一個獨立「計算」動作算數量當輸入)
+5. 「如果」判斷:計數 大於 0
 
-### 步驟7:算實際攝取量
+### 步驟7:算實際攝取量(接在「如果」區塊裡)
 
-- 若步驟6比對到資料庫數值:
-  ```
-  實際熱量 = 資料庫每100克熱量 × (estimated_weight_g / 100)
-  ```
-  蛋白/脂肪/碳水同理換算
-- 若步驟6比對不到:直接用步驟5的AI估算值(已經是整份的估計,不用再乘份量)
+**符合(資料庫有比對到)分支:**
+1. 「取得清單中的項目」,輸入=篩選結果,索引=第1項
+2. 四組「取得字典值」(鍵`calories_kcal`/`protein_g`/`fat_g`/`carbs_g`)→「計算」(×`WeightG`)→「計算」(÷`100`)→「設定變數」(`Final_Cal`/`Final_Protein`/`Final_Fat`/`Final_Carb`)
+
+**否則(沒比對到,用AI估算備援)分支:**
+- 四個「設定變數」,直接把步驟5存好的`AI_Cal`/`AI_Protein`/`AI_Fat`/`AI_Carb`各自存成`Final_Cal`/`Final_Protein`/`Final_Fat`/`Final_Carb`(搬值不是搬動作,原本AI_開頭那組動作留在原地不動)
+
+結束如果。
 
 ### 步驟8:寫入Apple Health
 
-依序用以下Shortcuts內建Health動作寫入步驟7算出的最終數值:
+Shortcuts沒有四個獨立動作,是**一個通用動作**「**記錄健康樣本**」(Log Health Sample),要新增**四次**,每次選不同類型:
 
-- 「記錄飲食能量」(Log Dietary Energy) — 單位kcal
-- 「記錄蛋白質」(Log Protein) — 單位g
-- 「記錄碳水化合物」(Log Carbohydrates) — 單位g
-- 「記錄脂肪」(Log Total Fat) — 單位g
+| HealthKit英文 | 中文介面實際顯示 | 單位 | 填入變數 |
+|---|---|---|---|
+| Dietary Energy | **膳食能量**(不是「飲食能量」) | 大卡/千卡 | Final_Cal |
+| Protein | 蛋白質 | 公克 | Final_Protein |
+| Total Carbohydrate | **醣類**(台灣慣用詞,不叫「碳水化合物」) | 公克 | Final_Carb |
+| Total Fat | 總脂肪 | 公克 | Final_Fat |
 
-每個動作記得選對應的變數值,日期用「現在」。
+每個「記錄健康樣本」動作:點「類型」選對應項目(在「營養」分類下)→ 單位選好 → 數值欄插入對應`Final_`變數。
 
 ## 流程圖
 
